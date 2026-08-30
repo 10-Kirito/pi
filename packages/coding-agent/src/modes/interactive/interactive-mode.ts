@@ -3247,6 +3247,7 @@ export class InteractiveMode {
 						this.hiddenThinkingLabel,
 						this.outputPad,
 						this.getMarkdownTransformers(),
+						this.getMaxThinkingTokens(),
 					);
 					this.streamingMessage = event.message;
 					this.chatContainer.addChild(this.streamingComponent);
@@ -3687,6 +3688,7 @@ export class InteractiveMode {
 					this.hiddenThinkingLabel,
 					this.outputPad,
 					this.getMarkdownTransformers(),
+					this.getMaxThinkingTokens(),
 				);
 				this.chatContainer.addChild(assistantComponent);
 				break;
@@ -4214,6 +4216,13 @@ export class InteractiveMode {
 			}
 		}
 		this.showStatus(`Tool output: ${expanded ? "expanded" : "collapsed"}`);
+	}
+
+	private getMaxThinkingTokens(): number | undefined {
+		const budgets = this.settingsManager.getThinkingBudgets();
+		const level = this.session.thinkingLevel;
+		if (!budgets || !level) return undefined;
+		return (budgets as Record<string, number | undefined>)[level];
 	}
 
 	/** Update rendered assistant messages without rebuilding live tool components. */

@@ -21,6 +21,7 @@ export class AssistantMessageComponent extends Container {
 	private lastMessage?: AssistantMessage;
 	private hasToolCalls = false;
 	private isStreaming = false;
+	private maxThinkingTokens?: number;
 
 	constructor(
 		message?: AssistantMessage,
@@ -29,6 +30,7 @@ export class AssistantMessageComponent extends Container {
 		hiddenThinkingLabel = "Thinking...",
 		outputPad = 1,
 		markdownTransformers: readonly MarkdownTransformer[] = [],
+		maxThinkingTokens?: number,
 	) {
 		super();
 
@@ -37,6 +39,7 @@ export class AssistantMessageComponent extends Container {
 		this.hiddenThinkingLabel = hiddenThinkingLabel;
 		this.outputPad = outputPad;
 		this.markdownTransformers = markdownTransformers;
+		this.maxThinkingTokens = maxThinkingTokens;
 
 		// Container for text/thinking content
 		this.contentContainer = new Container();
@@ -70,6 +73,13 @@ export class AssistantMessageComponent extends Container {
 
 	setOutputPad(padding: number): void {
 		this.outputPad = padding;
+		if (this.lastMessage) {
+			this.updateContent(this.lastMessage);
+		}
+	}
+
+	setMaxThinkingTokens(tokens: number | undefined): void {
+		this.maxThinkingTokens = tokens;
 		if (this.lastMessage) {
 			this.updateContent(this.lastMessage);
 		}
@@ -151,6 +161,19 @@ export class AssistantMessageComponent extends Container {
 					this.contentContainer.addChild(
 						new Text(theme.italic(theme.fg("thinkingText", display)), this.outputPad, 0),
 					);
+
+					// Progress bar (only while streaming and when a token budget is known).
+					if (isStreaming && this.maxThinkingTokens && this.maxThinkingTokens > 0) {
+						const totalChars = thinkingBlocks.reduce((n, b) => n + b.length, 0);
+						const estTokens = Math.max(1, Math.round(totalChars / 4));
+						const pct = Math.min(99, Math.round((estTokens / this.maxThinkingTokens) * 100));
+						const barWidth = 20;
+						const filled = Math.round((pct / 100) * barWidth);
+						const bar = "█".repeat(filled) + "░".repeat(barWidth - filled);
+						this.contentContainer.addChild(
+							new Text(theme.fg("dim", `[${bar}] ${pct}%`), this.outputPad, 0),
+						);
+					}
 				} else {
 					// Render each run of thinking blocks as one Markdown section.
 					this.contentContainer.addChild(

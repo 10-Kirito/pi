@@ -41,4 +41,20 @@ describe("AssistantMessageComponent collapsed thinking", () => {
 		expect(joined).toContain("正在分析登录超时原因");
 		expect(joined).not.toContain("Thinking...");
 	});
+
+	it("shows a progress bar while streaming when a token budget is known", () => {
+		const component = new AssistantMessageComponent(undefined, true, undefined, undefined, 1, [], 1024);
+		component.updateContent(
+			{
+				role: "assistant",
+				content: [{ type: "thinking", thinking: "a".repeat(400) }],
+				stopReason: "end",
+			} as any,
+			true,
+		);
+
+		const joined = component.render(80).join("\n");
+		expect(joined).toContain("%");
+		expect(joined).toContain("█");
+	});
 });
