@@ -8,6 +8,21 @@ const OSC133_ZONE_START = "\x1b]133;A\x07";
 const OSC133_ZONE_END = "\x1b]133;B\x07";
 const OSC133_ZONE_FINAL = "\x1b]133;C\x07";
 
+/** Rough token estimate: CJK chars ~1 token each, otherwise ~4 chars per token. */
+function estimateTokens(text: string): number {
+	let cjk = 0;
+	let other = 0;
+	for (const ch of text) {
+		const code = ch.codePointAt(0) ?? 0;
+		if (code >= 0x2e80 && code <= 0x9fff) {
+			cjk++;
+		} else {
+			other++;
+		}
+	}
+	return Math.max(1, cjk + Math.round(other / 4));
+}
+
 /**
  * Component that renders a complete assistant message
  */
@@ -22,6 +37,7 @@ export class AssistantMessageComponent extends Container {
 	private hasToolCalls = false;
 	private isStreaming = false;
 	private maxThinkingTokens?: number;
+	private streamingStartedAt?: number;
 
 	constructor(
 		message?: AssistantMessage,
@@ -100,6 +116,14 @@ export class AssistantMessageComponent extends Container {
 		this.lastMessage = message;
 		this.isStreaming = isStreaming;
 
+		if (isStreaming) {
+			if (this.streamingStartedAt === undefined) {
+				this.streamingStartedAt = Date.now();
+			}
+		} else {
+			this.streamingStartedAt = undefined;
+		}
+
 		// Clear content container
 		this.contentContainer.clear();
 
@@ -162,16 +186,15 @@ export class AssistantMessageComponent extends Container {
 						new Text(theme.italic(theme.fg("thinkingText", display)), this.outputPad, 0),
 					);
 
-					// Progress bar (only while streaming and when a token budget is known).
-					if (isStreaming && this.maxThinkingTokens && this.maxThinkingTokens > 0) {
-						const totalChars = thinkingBlocks.reduce((n, b) => n + b.length, 0);
-						const estTokens = Math.max(1, Math.round(totalChars / 4));
-						const pct = Math.min(99, Math.round((estTokens / this.maxThinkingTokens) * 100));
-						const barWidth = 20;
-						const filled = Math.round((pct / 100) * barWidth);
-						const bar = "█".repeat(filled) + "░".repeat(barWidth - filled);
+					// Live progress: estimated tokens + elapsed time (honest, no fake %).
+					if (isStreaming) {
+						const estTokens = estimateTokens(thinkingBlocks.join("\n"));
+						const elapsedSec = this.streamingStartedAt
+							? ((Date.now() - this.streamingStartedAt) / 1000).toFixed(1)
+							: "0.0";
+						const budget = this.maxThinkingTokens ? ` / ${this.maxThinkingTokens}` : "";
 						this.contentContainer.addChild(
-							new Text(theme.fg("dim", `[${bar}] ${pct}%`), this.outputPad, 0),
+							new Text(theme.fg("dim", `· ~${estTokens}${budget} tokens · ${elapsedSec}s`), this.outputPad, 0),
 						);
 					}
 				} else {

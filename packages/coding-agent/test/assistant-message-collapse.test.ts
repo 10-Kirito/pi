@@ -42,7 +42,7 @@ describe("AssistantMessageComponent collapsed thinking", () => {
 		expect(joined).not.toContain("Thinking...");
 	});
 
-	it("shows a progress bar while streaming when a token budget is known", () => {
+	it("shows live token/elapsed indicator while streaming", () => {
 		const component = new AssistantMessageComponent(undefined, true, undefined, undefined, 1, [], 1024);
 		component.updateContent(
 			{
@@ -54,7 +54,7 @@ describe("AssistantMessageComponent collapsed thinking", () => {
 		);
 
 		const joined = component.render(80).join("\n");
-		expect(joined).toContain("%");
-		expect(joined).toContain("█");
+		expect(joined).toContain("tokens");
+		expect(joined).toMatch(/\d+\.\d+s/);
 	});
 });
