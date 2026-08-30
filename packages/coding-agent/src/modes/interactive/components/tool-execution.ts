@@ -42,6 +42,9 @@ export class ToolExecutionComponent extends Container {
 	};
 	private convertedImages: Map<number, { data: string; mimeType: string }> = new Map();
 	private hideComponent = false;
+	private folded = false;
+	private startedAtMs?: number;
+	private endedAtMs?: number;
 
 	constructor(
 		toolName: string,
@@ -115,6 +118,10 @@ export class ToolExecutionComponent extends Container {
 		return this.toolDefinition.renderShell ?? this.builtInToolDefinition.renderShell ?? "default";
 	}
 
+	getToolCallId(): string {
+		return this.toolCallId;
+	}
+
 	private getRenderContext(lastComponent: Component | undefined): ToolRenderContext {
 		return {
 			args: this.args,
@@ -162,6 +169,7 @@ export class ToolExecutionComponent extends Container {
 
 	markExecutionStarted(): void {
 		this.executionStarted = true;
+		this.startedAtMs ??= Date.now();
 		this.updateDisplay();
 		this.ui.requestRender();
 	}
@@ -182,6 +190,9 @@ export class ToolExecutionComponent extends Container {
 	): void {
 		this.result = result;
 		this.isPartial = isPartial;
+		if (!isPartial) {
+			this.endedAtMs ??= Date.now();
+		}
 		this.updateDisplay();
 		this.maybeConvertImagesForKitty();
 	}
@@ -214,6 +225,28 @@ export class ToolExecutionComponent extends Container {
 		this.updateDisplay();
 	}
 
+	setFolded(folded: boolean): void {
+		this.folded = folded;
+	}
+
+	/** Whether this tool has finished producing its final result. */
+	isDone(): boolean {
+		return this.result !== undefined && !this.isPartial;
+	}
+
+	private getDurationLabel(): string {
+		if (this.startedAtMs === undefined || this.endedAtMs === undefined) return "";
+		return `${((this.endedAtMs - this.startedAtMs) / 1000).toFixed(1)}s`;
+	}
+
+	private renderFolded(): string[] {
+		const duration = this.getDurationLabel();
+		const line =
+			` ${theme.fg("success", "✓")} ${theme.fg("toolTitle", theme.bold(this.toolName))}` +
+			(duration ? ` ${theme.fg("dim", `(${duration})`)}` : "");
+		return [line];
+	}
+
 	setShowImages(show: boolean): void {
 		this.showImages = show;
 		this.updateDisplay();
@@ -232,6 +265,10 @@ export class ToolExecutionComponent extends Container {
 	override render(width: number): string[] {
 		if (this.hideComponent) {
 			return [];
+		}
+
+		if (this.folded) {
+			return this.renderFolded();
 		}
 
 		if (this.hasRendererDefinition() && this.getRenderShell() === "self") {

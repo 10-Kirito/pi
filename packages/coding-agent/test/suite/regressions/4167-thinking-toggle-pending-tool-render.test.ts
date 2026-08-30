@@ -46,6 +46,11 @@ type RenderSessionContextThis = {
 	sessionManager: { getCwd(): string; getEntries(): SessionEntry[] };
 	session: { retryAttempt: number; modelRegistry: { find(provider: string, modelId: string): undefined } };
 	toolOutputExpanded: boolean;
+	hideThinkingBlock: boolean;
+	hiddenThinkingLabel: string;
+	outputPad: number;
+	getMaxThinkingTokens(): number | undefined;
+	extractThinkingBlocks(message: AssistantMessage): string[];
 	isInitialized: boolean;
 	updateEditorBorderColor(): void;
 	getRegisteredToolDefinition(toolName: string): undefined;
@@ -75,7 +80,15 @@ function createFakeInteractiveModeThis(): RenderSessionContextThis {
 		},
 		sessionManager: { getCwd: () => process.cwd(), getEntries: () => [] },
 		session: { retryAttempt: 0, modelRegistry: { find: () => undefined } },
-		toolOutputExpanded: false,
+		toolOutputExpanded: true,
+		hideThinkingBlock: true,
+		hiddenThinkingLabel: "Thinking...",
+		outputPad: 1,
+		getMaxThinkingTokens: (InteractiveMode.prototype as unknown as { getMaxThinkingTokens(): number | undefined })
+			.getMaxThinkingTokens,
+		extractThinkingBlocks: (
+			InteractiveMode.prototype as unknown as { extractThinkingBlocks(m: AssistantMessage): string[] }
+		).extractThinkingBlocks,
 		isInitialized: true,
 		updateEditorBorderColor: vi.fn(),
 		getRegisteredToolDefinition: (_toolName: string) => undefined,

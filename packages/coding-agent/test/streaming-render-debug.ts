@@ -10,6 +10,7 @@ import { readFileSync } from "fs";
 import { dirname, join } from "path";
 import { fileURLToPath } from "url";
 import { AssistantMessageComponent } from "../src/modes/interactive/components/assistant-message.ts";
+import { ThinkingCard } from "../src/modes/interactive/components/thinking-card.ts";
 import { initTheme } from "../src/modes/interactive/theme/theme.ts";
 
 const __filename = fileURLToPath(import.meta.url);
@@ -44,14 +45,10 @@ async function main() {
 	const terminal = new ProcessTerminal();
 	const tui: TUI = new TuiMainScreen(terminal);
 
-	// Start with empty message
-	const message = {
-		role: "assistant",
-		content: [{ type: "thinking", thinking: "" }],
-	} as AssistantMessage;
-
-	const component = new AssistantMessageComponent(message, false);
-	tui.addChild(component);
+	const thinkingCard = new ThinkingCard();
+	tui.addChild(thinkingCard);
+	const textComponent = new AssistantMessageComponent();
+	tui.addChild(textComponent);
 	tui.start();
 
 	// Simulate streaming thinking content
@@ -60,14 +57,7 @@ async function main() {
 
 	for (let i = 0; i < fullThinkingText.length; i += chunkSize) {
 		thinkingBuffer += fullThinkingText.slice(i, i + chunkSize);
-
-		// Update message content
-		const updatedMessage = {
-			role: "assistant",
-			content: [{ type: "thinking", thinking: thinkingBuffer }],
-		} as AssistantMessage;
-
-		component.updateContent(updatedMessage);
+		thinkingCard.update([thinkingBuffer], true);
 		tui.requestRender();
 
 		await sleep(15); // Simulate token delay
@@ -78,13 +68,11 @@ async function main() {
 
 	const finalMessage = {
 		role: "assistant",
-		content: [
-			{ type: "thinking", thinking: fullThinkingText },
-			{ type: "text", text: fullTextContent },
-		],
+		content: [{ type: "text", text: fullTextContent }],
 	} as AssistantMessage;
 
-	component.updateContent(finalMessage);
+	thinkingCard.update([fullThinkingText], false);
+	textComponent.updateContent(finalMessage);
 	tui.requestRender();
 
 	// Keep alive for a moment to see the result

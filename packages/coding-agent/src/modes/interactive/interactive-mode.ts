@@ -148,7 +148,9 @@ import {
 	type StatusIndicator,
 	WorkingStatusIndicator,
 } from "./components/status-indicator.ts";
+import { ThinkingCard } from "./components/thinking-card.ts";
 import { ThinkingSelectorComponent } from "./components/thinking-selector.ts";
+import { ToolCallsCard } from "./components/tool-calls-card.ts";
 import { ToolExecutionComponent } from "./components/tool-execution.ts";
 import { TreeSelectorComponent } from "./components/tree-selector.ts";
 import { TrustSelectorComponent } from "./components/trust-selector.ts";
@@ -473,6 +475,11 @@ export class InteractiveMode {
 	// Streaming message tracking
 	private streamingComponent: AssistantMessageComponent | undefined = undefined;
 	private streamingMessage: AssistantMessage | undefined = undefined;
+
+	// Per-turn activity cards for thinking and tool calls
+	private streamingThinkingCard: ThinkingCard | undefined = undefined;
+	private streamingToolCallsCard: ToolCallsCard | undefined = undefined;
+	private turnThinkingBlocks: string[] = [];
 
 	// Tool execution tracking: toolCallId -> component
 	private pendingTools = new Map<string, ToolExecutionComponent>();
@@ -2193,13 +2200,11 @@ export class InteractiveMode {
 	private setHiddenThinkingLabel(label?: string): void {
 		this.hiddenThinkingLabel = label ?? this.defaultHiddenThinkingLabel;
 		for (const child of this.chatContainer.children) {
-			if (child instanceof AssistantMessageComponent) {
-				child.setHiddenThinkingLabel(this.hiddenThinkingLabel);
+			if (child instanceof ThinkingCard) {
+				child.setLabel(this.hiddenThinkingLabel);
 			}
 		}
-		if (this.streamingComponent) {
-			this.streamingComponent.setHiddenThinkingLabel(this.hiddenThinkingLabel);
-		}
+		this.streamingThinkingCard?.setLabel(this.hiddenThinkingLabel);
 		this.ui.requestRender();
 	}
 
@@ -3237,17 +3242,26 @@ export class InteractiveMode {
 					this.ui.requestRender();
 				} else if (event.message.role === "user") {
 					this.addMessageToChat(event.message);
+					// A new user message starts a fresh turn: reset thinking accumulation
+					// and create the per-turn activity cards below the user message.
+					this.turnThinkingBlocks = [];
+					this.streamingThinkingCard = new ThinkingCard(
+						!this.hideThinkingBlock,
+						this.getMaxThinkingTokens(),
+						this.outputPad,
+						this.hiddenThinkingLabel,
+					);
+					this.streamingToolCallsCard = new ToolCallsCard(this.toolOutputExpanded, this.outputPad);
+					this.chatContainer.addChild(this.streamingThinkingCard);
+					this.chatContainer.addChild(this.streamingToolCallsCard);
 					this.updatePendingMessagesDisplay();
 					this.ui.requestRender();
 				} else if (event.message.role === "assistant") {
 					this.streamingComponent = new AssistantMessageComponent(
 						undefined,
-						this.hideThinkingBlock,
 						this.getMarkdownThemeWithSettings(),
-						this.hiddenThinkingLabel,
 						this.outputPad,
 						this.getMarkdownTransformers(),
-						this.getMaxThinkingTokens(),
 					);
 					this.streamingMessage = event.message;
 					this.chatContainer.addChild(this.streamingComponent);
@@ -3260,6 +3274,12 @@ export class InteractiveMode {
 				if (this.streamingComponent && event.message.role === "assistant") {
 					this.streamingMessage = event.message;
 					this.streamingComponent.updateContent(this.streamingMessage, true);
+
+					// Feed thinking to the card: completed blocks + the streaming block (last = current).
+					this.streamingThinkingCard?.update(
+						[...this.turnThinkingBlocks, ...this.extractThinkingBlocks(this.streamingMessage)],
+						true,
+					);
 
 					for (const content of this.streamingMessage.content) {
 						if (content.type === "toolCall") {
@@ -3277,7 +3297,7 @@ export class InteractiveMode {
 									this.sessionManager.getCwd(),
 								);
 								component.setExpanded(this.toolOutputExpanded);
-								this.chatContainer.addChild(component);
+								this.streamingToolCallsCard?.addTool(component);
 								this.pendingTools.set(content.id, component);
 							} else {
 								const component = this.pendingTools.get(content.id);
@@ -3305,6 +3325,10 @@ export class InteractiveMode {
 						this.streamingMessage.errorMessage = errorMessage;
 					}
 					this.streamingComponent.updateContent(this.streamingMessage, false);
+
+					// Fold this message's thinking into the completed set.
+					this.turnThinkingBlocks.push(...this.extractThinkingBlocks(this.streamingMessage));
+					this.streamingThinkingCard?.update(this.turnThinkingBlocks, false);
 
 					if (this.streamingMessage.stopReason === "aborted" || this.streamingMessage.stopReason === "error") {
 						if (!errorMessage) {
@@ -3351,7 +3375,7 @@ export class InteractiveMode {
 						this.sessionManager.getCwd(),
 					);
 					component.setExpanded(this.toolOutputExpanded);
-					this.chatContainer.addChild(component);
+					this.streamingToolCallsCard?.addTool(component);
 					this.pendingTools.set(event.toolCallId, component);
 				}
 				component.markExecutionStarted();
@@ -3395,10 +3419,14 @@ export class InteractiveMode {
 
 			case "agent_settled":
 				await this.checkShutdownRequested();
-				if (this.settingsManager.getCollapseAutoCollapseOnTurnEnd() && !this.hideThinkingBlock) {
-					this.hideThinkingBlock = true;
-					this.settingsManager.setHideThinkingBlock(this.hideThinkingBlock);
-					this.updateThinkingBlockVisibility();
+				if (this.settingsManager.getCollapseAutoCollapseOnTurnEnd()) {
+					this.streamingThinkingCard?.setThinkingExpanded(false);
+					this.streamingToolCallsCard?.setExpanded(false);
+					if (!this.hideThinkingBlock) {
+						this.hideThinkingBlock = true;
+						this.settingsManager.setHideThinkingBlock(this.hideThinkingBlock);
+						this.updateThinkingBlockVisibility();
+					}
 				}
 				break;
 
@@ -3683,12 +3711,9 @@ export class InteractiveMode {
 			case "assistant": {
 				const assistantComponent = new AssistantMessageComponent(
 					message,
-					this.hideThinkingBlock,
 					this.getMarkdownThemeWithSettings(),
-					this.hiddenThinkingLabel,
 					this.outputPad,
 					this.getMarkdownTransformers(),
-					this.getMaxThinkingTokens(),
 				);
 				this.chatContainer.addChild(assistantComponent);
 				break;
@@ -3709,6 +3734,10 @@ export class InteractiveMode {
 	): void {
 		this.pendingTools.clear();
 		const renderedPendingTools = new Map<string, ToolExecutionComponent>();
+		// Per-turn activity cards for thinking + tool calls.
+		let turnThinkingCard: ThinkingCard | undefined;
+		let turnToolCallsCard: ToolCallsCard | undefined;
+		const turnThinkingBlocks: string[] = [];
 		// Cache-miss notices are not persisted; re-derive them from the full entry
 		// list and re-inject them after the assistant messages that paid for them.
 		const cacheMisses = this.settingsManager.getShowCacheMissNotices()
@@ -3731,10 +3760,25 @@ export class InteractiveMode {
 			}
 
 			const message = item;
-			// Assistant messages need special handling for tool calls
+			// Assistant messages need special handling for thinking + tool calls
 			if (message.role === "assistant") {
+				if (!turnThinkingCard) {
+					turnThinkingCard = new ThinkingCard(
+						!this.hideThinkingBlock,
+						this.getMaxThinkingTokens(),
+						this.outputPad,
+						this.hiddenThinkingLabel,
+					);
+					turnToolCallsCard = new ToolCallsCard(this.toolOutputExpanded, this.outputPad);
+					this.chatContainer.addChild(turnThinkingCard);
+					this.chatContainer.addChild(turnToolCallsCard);
+				}
+
+				turnThinkingBlocks.push(...this.extractThinkingBlocks(message));
+				turnThinkingCard.update(turnThinkingBlocks, false);
+
 				this.addMessageToChat(message);
-				// Render tool call components
+				// Render tool call components into the card.
 				for (const content of message.content) {
 					if (content.type === "toolCall") {
 						const component = new ToolExecutionComponent(
@@ -3750,7 +3794,7 @@ export class InteractiveMode {
 							this.sessionManager.getCwd(),
 						);
 						component.setExpanded(this.toolOutputExpanded);
-						this.chatContainer.addChild(component);
+						turnToolCallsCard!.addTool(component);
 
 						if (message.stopReason === "aborted" || message.stopReason === "error") {
 							let errorMessage: string;
@@ -3780,6 +3824,12 @@ export class InteractiveMode {
 					component.updateResult(message);
 					renderedPendingTools.delete(message.toolCallId);
 				}
+			} else if (message.role === "user") {
+				// A user message starts a new turn with fresh activity cards.
+				turnThinkingCard = undefined;
+				turnToolCallsCard = undefined;
+				turnThinkingBlocks.length = 0;
+				this.addMessageToChat(message, options);
 			} else {
 				// All other messages use standard rendering
 				this.addMessageToChat(message, options);
@@ -4221,9 +4271,7 @@ export class InteractiveMode {
 	private getMaxThinkingTokens(): number | undefined {
 		const level = this.session.thinkingLevel;
 		if (!level || level === "off") return undefined;
-		const custom = this.settingsManager.getThinkingBudgets() as
-			| Record<string, number | undefined>
-			| undefined;
+		const custom = this.settingsManager.getThinkingBudgets() as Record<string, number | undefined> | undefined;
 		if (custom?.[level]) return custom[level];
 		const defaults: Record<string, number> = {
 			minimal: 1024,
@@ -4236,11 +4284,26 @@ export class InteractiveMode {
 		return defaults[level];
 	}
 
-	/** Update rendered assistant messages without rebuilding live tool components. */
+	/** Non-empty thinking block texts from an assistant message, in order. */
+	private extractThinkingBlocks(message: AssistantMessage): string[] {
+		const blocks: string[] = [];
+		for (const content of message.content) {
+			if (content.type === "thinking") {
+				const thinking = content.thinking.trim();
+				if (thinking) {
+					blocks.push(thinking);
+				}
+			}
+		}
+		return blocks;
+	}
+
+	/** Update rendered thinking cards without rebuilding live tool components. */
 	private updateThinkingBlockVisibility(): void {
+		const expanded = !this.hideThinkingBlock;
 		for (const child of this.chatContainer.children) {
-			if (child instanceof AssistantMessageComponent) {
-				child.setHideThinkingBlock(this.hideThinkingBlock);
+			if (child instanceof ThinkingCard) {
+				child.setThinkingExpanded(expanded);
 			}
 		}
 		this.ui.requestRender();
