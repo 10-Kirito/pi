@@ -70,6 +70,11 @@ export interface WarningSettings {
 	anthropicExtraUsage?: boolean; // default: true
 }
 
+export interface CollapseSettings {
+	thinkingByDefault?: boolean; // default: true - thinking blocks collapsed to a one-line preview
+	autoCollapseOnTurnEnd?: boolean; // default: true - auto-collapse thinking after a turn settles
+}
+
 export type DefaultProjectTrust = "ask" | "always" | "never";
 
 export type TransportSetting = Transport;
@@ -105,6 +110,7 @@ export interface Settings {
 	branchSummary?: BranchSummarySettings;
 	retry?: RetrySettings;
 	hideThinkingBlock?: boolean;
+	collapse?: CollapseSettings;
 	showCacheMissNotices?: boolean; // default: false - show prompt-cache miss and compaction cost notices
 	externalEditor?: string; // Command for Ctrl+G external editor; takes precedence over VISUAL/EDITOR
 	shellPath?: string; // Custom shell path (e.g., for Cygwin users on Windows); supports leading ~ expansion
@@ -912,8 +918,16 @@ export class SettingsManager {
 		return parseTimeoutSetting(this.settings.websocketConnectTimeoutMs, "websocketConnectTimeoutMs");
 	}
 
+	getCollapseThinkingByDefault(): boolean {
+		return this.settings.collapse?.thinkingByDefault ?? true;
+	}
+
+	getCollapseAutoCollapseOnTurnEnd(): boolean {
+		return this.settings.collapse?.autoCollapseOnTurnEnd ?? true;
+	}
+
 	getHideThinkingBlock(): boolean {
-		return this.settings.hideThinkingBlock ?? false;
+		return this.settings.hideThinkingBlock ?? this.getCollapseThinkingByDefault();
 	}
 
 	getShowCacheMissNotices(): boolean {

@@ -3394,6 +3394,11 @@ export class InteractiveMode {
 
 			case "agent_settled":
 				await this.checkShutdownRequested();
+				if (this.settingsManager.getCollapseAutoCollapseOnTurnEnd() && !this.hideThinkingBlock) {
+					this.hideThinkingBlock = true;
+					this.settingsManager.setHideThinkingBlock(this.hideThinkingBlock);
+					this.updateThinkingBlockVisibility();
+				}
 				break;
 
 			case "compaction_start": {

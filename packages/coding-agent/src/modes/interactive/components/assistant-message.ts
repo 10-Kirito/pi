@@ -137,9 +137,19 @@ export class AssistantMessageComponent extends Container {
 					.some((c) => (c.type === "text" && c.text.trim()) || (c.type === "thinking" && c.thinking.trim()));
 
 				if (this.hideThinkingBlock) {
-					// Show one static label for each run of thinking blocks when hidden.
+					// Collapsed: show a one-line live preview of the latest thinking content
+					// so users can tell what the model is working on without expanding.
+					const lastBlock = thinkingBlocks[thinkingBlocks.length - 1] ?? "";
+					const lastLine =
+						lastBlock
+							.split("\n")
+							.map((l) => l.trim())
+							.filter(Boolean)
+							.pop() ?? "";
+					const preview = lastLine.length > 0 ? lastLine : this.hiddenThinkingLabel;
+					const display = preview.length > 120 ? `${preview.slice(0, 117)}...` : preview;
 					this.contentContainer.addChild(
-						new Text(theme.italic(theme.fg("thinkingText", this.hiddenThinkingLabel)), this.outputPad, 0),
+						new Text(theme.italic(theme.fg("thinkingText", display)), this.outputPad, 0),
 					);
 				} else {
 					// Render each run of thinking blocks as one Markdown section.
