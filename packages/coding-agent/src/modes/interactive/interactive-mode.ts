@@ -4219,10 +4219,21 @@ export class InteractiveMode {
 	}
 
 	private getMaxThinkingTokens(): number | undefined {
-		const budgets = this.settingsManager.getThinkingBudgets();
 		const level = this.session.thinkingLevel;
-		if (!budgets || !level) return undefined;
-		return (budgets as Record<string, number | undefined>)[level];
+		if (!level || level === "off") return undefined;
+		const custom = this.settingsManager.getThinkingBudgets() as
+			| Record<string, number | undefined>
+			| undefined;
+		if (custom?.[level]) return custom[level];
+		const defaults: Record<string, number> = {
+			minimal: 1024,
+			low: 2048,
+			medium: 8192,
+			high: 16384,
+			xhigh: 16384,
+			max: 16384,
+		};
+		return defaults[level];
 	}
 
 	/** Update rendered assistant messages without rebuilding live tool components. */
